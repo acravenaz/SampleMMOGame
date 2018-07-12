@@ -49,6 +49,6 @@ of Visual Studio.
 In other words, simply copy the entire repository to the directory of your choosing, open
 Game.sln in a compatible version of Visual Studio Community, and right click both projects
 (GameServer and GameClient), and click build. Check your corresponding debug or release folder
-and copy sqlite.dll from the SQLite folder to the same working directory as GameServer.exe (if needed)
-and run.
+and copy sqlite3.dll from the SQLite folder to the same working directory as GameServer.exe (if needed)
+and run. GameClient.exe does NOT need sqlite3.dll present in order to run.
 
