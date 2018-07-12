@@ -145,12 +145,13 @@ struct combat_update {
 
 //NOTE: Client/Server message command definitions:
 
-//NOTE: Response from server informing the client that it made an invalid request. Data should be an MCERR_ code
-#define MC_INVALID (char)0x00
+//NOTE: Message was blank/empty. This is considered invalid and should be followed immediately by another recv 
+//		attempt until the client or server received valid data
+#define MC_NONE (char)0x00
 //NOTE: Initial message sent by client upon connecting to server
 #define MC_HELLO (char)0x01
-//NOTE: Generic message acknowledging receipt of data, passing send priority back without a request
-#define MC_ACK (char)0x02
+//NOTE: Response from server informing the client that it made an invalid request. Data should be an MCERR_ code
+#define MC_ERROR (char)0x02
 //NOTE: Request from server to client for logon information
 #define MC_REQLOGON (char)0x03
 //NOTE: Response from client to server with logon information. Data buffer should be filled with player's character name

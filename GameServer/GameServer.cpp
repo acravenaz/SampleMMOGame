@@ -38,8 +38,6 @@ along with SampleMMOGame. If not, see <https://www.gnu.org/licenses/>.
 
 #include "GameServer.h"
 
-using namespace std;
-
 #pragma comment(lib, "Ws2_32.lib")
 #pragma comment(lib, "Winmm.lib")
 #pragma comment(lib, "sqlite3.lib")
@@ -124,120 +122,6 @@ SOCKET Win32_WinSockInit() {
 	}
 	return ListenSocket;
 }
-
-// NOTE: Entry point for each thread created when a new client connects on the listening socket
-DWORD WINAPI Thread_ClientConnection(void *Data) {
-	//SOCKET ClientSocket = (SOCKET)Data;
-	client_thread_data *ThreadData = (client_thread_data *)Data;
-	thread_message_queue *MessageQueue = &ThreadData->ThreadHandler->MessageQueues[ThreadData->ThreadID];
-
-	bool ClientConnected = true;
-	while (ClientConnected) {
-
-		char ReceiveBuffer[DEFAULT_BUFFER_LENGTH];
-		int BytesReceived = recv(ThreadData->ClientSocket, ReceiveBuffer, DEFAULT_BUFFER_LENGTH, 0);
-
-		if (BytesReceived > 0) {
-			//NOTE: Intercept MC_LOGOFF and set ClientConnected to false, so the thread can properly
-			//		terminate before informing main() that the client disconnected with MC_DISCONNECT
-			message *IncMessage = (message *)ReceiveBuffer;
-			if (IncMessage->Command != MC_LOGOFF) {
-				MessageQueue->IncomingMessage = IncMessage;
-				bool MessageSent = false;
-				while (MessageSent == false) {
-					message *Message = MessageQueue->OutgoingMessage;
-					if (Message) {
-						char *OutgoingBuffer = (char *)Message;
-						int BytesSent = send(ThreadData->ClientSocket, OutgoingBuffer, DEFAULT_BUFFER_LENGTH, 0);
-						if (BytesSent > 0) {
-							//printf("Sent %d bytes.\n", BytesSent);
-						}
-						else {
-							printf("Send Failed: %d\n", WSAGetLastError());
-							ClientConnected = false;
-						}
-						MessageSent = true;
-						MessageQueue->OutgoingMessage = 0;
-					}
-				}
-			}
-			else {
-				ClientConnected = false;
-			}
-		}
-		else if (BytesReceived == 0) {
-			printf("Client closed connection.\n");
-			ClientConnected = false;
-		}
-		else {
-			printf("Receive Failed: %d\n", WSAGetLastError());
-			ClientConnected = false;
-		}
-	}
-	printf("Closing connection.\n");
-	// NOTE: Shut down connection when done
-	int ShutdownResult = shutdown(ThreadData->ClientSocket, SD_SEND);
-	if (ShutdownResult == SOCKET_ERROR) {
-		printf("Failed to close connection: %d\n", WSAGetLastError());
-		closesocket(ThreadData->ClientSocket);
-		//NOTE: Since thread is terminating, this needs to be on the heap so it
-		//		doesn't get popped off the stack before the main thread can handle it
-		message *DisconnectMessage = (message *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(message));
-		DisconnectMessage->Command = MC_DISCONNECT;
-		MessageQueue->IncomingMessage = DisconnectMessage;
-		return 1;
-	}
-	else {
-		printf("Closed connection successfully.\n");
-		//NOTE: Since thread is terminating, this needs to be on the heap so it
-		//		doesn't get popped off the stack before the main thread can handle it
-		message *DisconnectMessage = (message *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(message));
-		DisconnectMessage->Command = MC_DISCONNECT;
-		MessageQueue->IncomingMessage = DisconnectMessage;
-	}
-	return 0;
-}
-
-// NOTE: Entry point for the listener thread kicked off in main()
-DWORD WINAPI Thread_ListenForConnections(void *Data) {
-	//SOCKET ListenSocket = (SOCKET)Data;
-	listen_thread_data *ThreadData = (listen_thread_data *)Data;
-	printf("Waiting for Client Connection...\n");
-	SOCKET ClientSocket = INVALID_SOCKET;
-	while (ClientSocket = accept(ThreadData->ListenSocket, NULL, NULL)) {
-		if (ClientSocket != INVALID_SOCKET) {
-			// TODO: Search through thread handles for ones that have been released
-			printf("Client Connection accepted.\n");
-			client_thread_data *ClientThreadData = (client_thread_data *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(client_thread_data));
-			ClientThreadData->ClientSocket = ClientSocket;
-			ClientThreadData->ThreadHandler = ThreadData->ThreadHandler;
-			//ClientThreadData->ThreadID = ThreadData->ThreadHandler->ClientThreadCount++;
-			bool FoundUnusedThread = false;
-			for (int i = 0; i < MAX_CLIENTS && FoundUnusedThread == false; i++) {
-				if (ThreadData->ThreadHandler->ClientThreadIDs[i] == 0) {
-					ClientThreadData->ThreadID = i;
-					printf("Success! Starting thread %d.\n", ClientThreadData->ThreadID);
-					ThreadData->ThreadHandler->ClientThreadHandles[ClientThreadData->ThreadID] =
-						CreateThread(NULL, 0, Thread_ClientConnection, (void *)ClientThreadData, 0,
-							&ThreadData->ThreadHandler->ClientThreadIDs[ClientThreadData->ThreadID]);
-					FoundUnusedThread = true;
-				}
-			}
-			if (!FoundUnusedThread) {
-				printf("Max clients reached! No Available threads.\n");
-				closesocket(ClientSocket);
-			}
-			ClientSocket = INVALID_SOCKET;
-		}
-		else {
-			printf("Failed to accept client connection: %d\n", WSAGetLastError());
-			closesocket(ClientSocket);
-			ClientSocket = INVALID_SOCKET;
-		}
-	}
-	return 0;
-}
-
 
 inline LARGE_INTEGER Win32_GetWallClock() {
 	LARGE_INTEGER Result;
@@ -577,6 +461,124 @@ void Game_InitializeRooms(game_state *GameState) {
 	GameState->Rooms[5].Enemies[1].State = NEUTRAL;
 }
 
+// NOTE: Entry point for each thread created when a new client connects on the listening socket
+DWORD WINAPI Thread_ClientConnection(void *Data) {
+	//SOCKET ClientSocket = (SOCKET)Data;
+	client_thread_data *ThreadData = (client_thread_data *)Data;
+	thread_message_queue *MessageQueue = &ThreadData->ThreadHandler->MessageQueues[ThreadData->ThreadID];
+
+	bool ClientConnected = true;
+	while (ClientConnected) {
+
+		char ReceiveBuffer[DEFAULT_BUFFER_LENGTH] = {};
+		int BytesReceived = recv(ThreadData->ClientSocket, ReceiveBuffer, DEFAULT_BUFFER_LENGTH, 0);
+
+		if (BytesReceived > 0) {
+			//NOTE: Intercept MC_LOGOFF and set ClientConnected to false, so the thread can properly
+			//		terminate before informing main() that the client disconnected with MC_DISCONNECT
+			message *IncMessage = (message *)ReceiveBuffer;
+			if (IncMessage->Command != MC_NONE) {
+				if (IncMessage->Command != MC_LOGOFF) {
+					MessageQueue->IncomingMessage = IncMessage;
+					bool MessageSent = false;
+					while (MessageSent == false) {
+						message *Message = MessageQueue->OutgoingMessage;
+						if (Message) {
+							char *OutgoingBuffer = (char *)Message;
+							int BytesSent = send(ThreadData->ClientSocket, OutgoingBuffer, DEFAULT_BUFFER_LENGTH, 0);
+							if (BytesSent > 0) {
+								//printf("Sent %d bytes.\n", BytesSent);
+							}
+							else {
+								printf("Send Failed: %d\n", WSAGetLastError());
+								ClientConnected = false;
+							}
+							MessageSent = true;
+							MessageQueue->OutgoingMessage = 0;
+						}
+					}
+				}
+				else {
+					ClientConnected = false;
+				}
+			}
+			else {
+				printf("Server received a blank request! Ignoring...\n");
+			}
+		}
+		else if (BytesReceived == 0) {
+			printf("Client closed connection.\n");
+			ClientConnected = false;
+		}
+		else {
+			printf("Receive Failed: %d\n", WSAGetLastError());
+			ClientConnected = false;
+		}
+	}
+	printf("Closing connection.\n");
+	// NOTE: Shut down connection when done
+	int ShutdownResult = shutdown(ThreadData->ClientSocket, SD_SEND);
+	if (ShutdownResult == SOCKET_ERROR) {
+		printf("Failed to close connection: %d\n", WSAGetLastError());
+		closesocket(ThreadData->ClientSocket);
+		//NOTE: Since thread is terminating, this needs to be on the heap so it
+		//		doesn't get popped off the stack before the main thread can handle it
+		message *DisconnectMessage = (message *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(message));
+		DisconnectMessage->Command = MC_DISCONNECT;
+		MessageQueue->IncomingMessage = DisconnectMessage;
+		return 1;
+	}
+	else {
+		printf("Closed connection successfully.\n");
+		//NOTE: Since thread is terminating, this needs to be on the heap so it
+		//		doesn't get popped off the stack before the main thread can handle it
+		message *DisconnectMessage = (message *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(message));
+		DisconnectMessage->Command = MC_DISCONNECT;
+		MessageQueue->IncomingMessage = DisconnectMessage;
+	}
+	return 0;
+}
+
+// NOTE: Entry point for the listener thread kicked off in main()
+DWORD WINAPI Thread_ListenForConnections(void *Data) {
+	//SOCKET ListenSocket = (SOCKET)Data;
+	listen_thread_data *ThreadData = (listen_thread_data *)Data;
+	printf("Waiting for Client Connection...\n");
+	SOCKET ClientSocket = INVALID_SOCKET;
+	while (ClientSocket = accept(ThreadData->ListenSocket, NULL, NULL)) {
+		if (ClientSocket != INVALID_SOCKET) {
+			// TODO: Search through thread handles for ones that have been released
+			printf("Client Connection accepted.\n");
+			client_thread_data *ClientThreadData = (client_thread_data *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(client_thread_data));
+			ClientThreadData->ClientSocket = ClientSocket;
+			ClientThreadData->ThreadHandler = ThreadData->ThreadHandler;
+			//ClientThreadData->ThreadID = ThreadData->ThreadHandler->ClientThreadCount++;
+			bool FoundUnusedThread = false;
+			for (int i = 0; i < MAX_CLIENTS && FoundUnusedThread == false; i++) {
+				if (ThreadData->ThreadHandler->ClientThreadIDs[i] == 0) {
+					ClientThreadData->ThreadID = i;
+					printf("Success! Starting thread %d.\n", ClientThreadData->ThreadID);
+					ThreadData->ThreadHandler->ClientThreadHandles[ClientThreadData->ThreadID] =
+						CreateThread(NULL, 0, Thread_ClientConnection, (void *)ClientThreadData, 0,
+							&ThreadData->ThreadHandler->ClientThreadIDs[ClientThreadData->ThreadID]);
+					FoundUnusedThread = true;
+				}
+			}
+			if (!FoundUnusedThread) {
+				printf("Max clients reached! No Available threads.\n");
+				closesocket(ClientSocket);
+			}
+			ClientSocket = INVALID_SOCKET;
+		}
+		else {
+			printf("Failed to accept client connection: %d\n", WSAGetLastError());
+			closesocket(ClientSocket);
+			ClientSocket = INVALID_SOCKET;
+		}
+	}
+	return 0;
+}
+
 /* NOTE: main() will focus on handling the game tick logic and messages from clients (or more accurately, other threads).
 		 To this end, after we get a listening socket from Win32_WinSockInit, a separate thread is
 		 kicked off to listen for and handle connections. From there, each client gets its own, new thread,
@@ -643,7 +645,7 @@ int main() {
 					message *Message = ThreadHandler.MessageQueues[ThreadID].IncomingMessage;
 					if (Message) {
 						if (Message->Command == MC_HELLO) {
-							//printf("Client says hello.\n");
+							printf("Client says hello.\n");
 							printf("Sending logon request.\n");
 							message OutgoingMessage = {MC_REQLOGON, 0};
 							ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
@@ -696,7 +698,7 @@ int main() {
 											}
 											else {
 												printf("Player lacks required key!\n");
-												message OutgoingMessage = {MC_INVALID, MCERR_MOVE_REQUIRES_KEY};
+												message OutgoingMessage = {MC_ERROR, MCERR_MOVE_REQUIRES_KEY};
 												ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
 											}
 										}
@@ -709,19 +711,19 @@ int main() {
 									}
 									else {
 										printf("ConnectedRoom is invalid!\n");
-										message OutgoingMessage = {MC_INVALID, MCERR_INVALIDROOM};
+										message OutgoingMessage = {MC_ERROR, MCERR_INVALIDROOM};
 										ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
 									}
 								}
 								else {
 									printf("Player is not in NEUTRAL state! Cannot move!");
-									message OutgoingMessage = {MC_INVALID, MCERR_NOT_NEUTRAL};
+									message OutgoingMessage = {MC_ERROR, MCERR_NOT_NEUTRAL};
 									ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
 								}
 							}
 							else {
 								printf("Move direction is invalid!\n");
-								message OutgoingMessage = {MC_INVALID, MCERR_INVALIDROOM};
+								message OutgoingMessage = {MC_ERROR, MCERR_INVALIDROOM};
 								ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
 							}
 						}
@@ -752,7 +754,7 @@ int main() {
 											for (int i = 1; i < PLAYER_MAX_INVENTORY; i++) {
 												if (ActivePlayer->Inventory[i].ID == PickupItem->ID) {
 													printf("Item already exists in player's inventory!\n");
-													message OutgoingMessage = {MC_INVALID, MCERR_ITEM_EXISTS};
+													message OutgoingMessage = {MC_ERROR, MCERR_ITEM_EXISTS};
 													ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
 													ItemAlreadyExists = true;
 													break;
@@ -776,32 +778,32 @@ int main() {
 												}
 												if (!ItemAdded) {
 													printf("Player inventory is full!\n");
-													message OutgoingMessage = {MC_INVALID, MCERR_INVENTORY_FULL};
+													message OutgoingMessage = {MC_ERROR, MCERR_INVENTORY_FULL};
 													ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
 												}
 											} //NOTE: ItemAlreadyExists error is handled above
 										}
 										else {
 											printf("Player lacks required key!\n");
-											message OutgoingMessage = {MC_INVALID, MCERR_PICKUP_REQUIRES_KEY};
+											message OutgoingMessage = {MC_ERROR, MCERR_PICKUP_REQUIRES_KEY};
 											ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
 										}
 									}
 									else {
 										printf("Item requested doesn't exist in room/has ID of 0!\n");
-										message OutgoingMessage = {MC_INVALID, MCERR_ITEM_INVALID};
+										message OutgoingMessage = {MC_ERROR, MCERR_ITEM_INVALID};
 										ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
 									}
 								}
 								else {
 									printf("Player is not in NEUTRAL state! Cannot pickup!");
-									message OutgoingMessage = {MC_INVALID, MCERR_NOT_NEUTRAL};
+									message OutgoingMessage = {MC_ERROR, MCERR_NOT_NEUTRAL};
 									ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
 								}
 							}
 							else {
 								printf("Item requested was out of bounds!\n");
-								message OutgoingMessage = {MC_INVALID, MCERR_OUT_OF_BOUNDS};
+								message OutgoingMessage = {MC_ERROR, MCERR_OUT_OF_BOUNDS};
 								ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
 							}
 						}
@@ -830,19 +832,19 @@ int main() {
 									}
 									else {
 										printf("Item is not a consumable! Cannot use!\n");
-										message OutgoingMessage = {MC_INVALID, MCERR_NOT_CONSUMABLE};
+										message OutgoingMessage = {MC_ERROR, MCERR_NOT_CONSUMABLE};
 										ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
 									}
 								}
 								else {
 									printf("Player is not in NEUTRAL or FIGHTING state! Cannot use!\n");
-									message OutgoingMessage = {MC_INVALID, MCERR_PLAYER_DEAD};
+									message OutgoingMessage = {MC_ERROR, MCERR_PLAYER_DEAD};
 									ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
 								}
 							}
 							else {
 								printf("Item requested was out of bounds!\n");
-								message OutgoingMessage = {MC_INVALID, MCERR_OUT_OF_BOUNDS};
+								message OutgoingMessage = {MC_ERROR, MCERR_OUT_OF_BOUNDS};
 								ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
 							}
 						}
@@ -870,19 +872,19 @@ int main() {
 									}
 									else {
 										printf("Item is not a weapon! Cannot equip!\n");
-										message OutgoingMessage = {MC_INVALID, MCERR_NOT_WEAPON};
+										message OutgoingMessage = {MC_ERROR, MCERR_NOT_WEAPON};
 										ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
 									}
 								}
 								else {
 									printf("Player is not in NEUTRAL or FIGHTING state! Cannot equip!\n");
-									message OutgoingMessage = {MC_INVALID, MCERR_PLAYER_DEAD};
+									message OutgoingMessage = {MC_ERROR, MCERR_PLAYER_DEAD};
 									ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
 								}
 							}
 							else {
 								printf("Requested item was out of bounds!\n");
-								message OutgoingMessage = {MC_INVALID, MCERR_OUT_OF_BOUNDS};
+								message OutgoingMessage = {MC_ERROR, MCERR_OUT_OF_BOUNDS};
 								ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
 							}
 						}
@@ -916,19 +918,19 @@ int main() {
 											Error = MCERR_TARGET_DEAD;
 										}
 										printf("Target is invalid!\n");
-										message OutgoingMessage = {MC_INVALID, Error};
+										message OutgoingMessage = {MC_ERROR, Error};
 										ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
 									}
 								}
 								else {
 									printf("Player is not in NEUTRAL state! Cannot fight!");
-									message OutgoingMessage = {MC_INVALID, MCERR_NOT_NEUTRAL};
+									message OutgoingMessage = {MC_ERROR, MCERR_NOT_NEUTRAL};
 									ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
 								}
 							}
 							else {
 								printf("Requested enemy was out of bounds!\n");
-								message OutgoingMessage = {MC_INVALID, MCERR_OUT_OF_BOUNDS};
+								message OutgoingMessage = {MC_ERROR, MCERR_OUT_OF_BOUNDS};
 								ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
 							}
 						}
@@ -1069,20 +1071,20 @@ int main() {
 									else {
 										//NOTE: Error should not happen during normal gameplay
 										printf("Player's target is not in fighting state!\n");
-										message OutgoingMessage = {MC_INVALID, MCERR_TARGET_INVALID};
+										message OutgoingMessage = {MC_ERROR, MCERR_TARGET_INVALID};
 										ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
 									}
 								}
 								else {
 									//NOTE: Error should not happen during normal gameplay
 									printf("Player's target is invalid!\n");
-									message OutgoingMessage = {MC_INVALID, MCERR_TARGET_INVALID};
+									message OutgoingMessage = {MC_ERROR, MCERR_TARGET_INVALID};
 									ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
 								}
 							}
 							else {
 								printf("Player is not in FIGHTING state! Cannot attack!\n");
-								message OutgoingMessage = {MC_INVALID, MCERR_NOT_FIGHTING};
+								message OutgoingMessage = {MC_ERROR, MCERR_NOT_FIGHTING};
 								ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
 							}
 						}
@@ -1154,19 +1156,19 @@ int main() {
 									}
 									else {
 										printf("Target is not in FIGHTING state!");
-										message OutgoingMessage = {MC_INVALID, MCERR_TARGET_INVALID};
+										message OutgoingMessage = {MC_ERROR, MCERR_TARGET_INVALID};
 										ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
 									}
 								}
 								else {
 									printf("Player's target is not valid!\n");
-									message OutgoingMessage = {MC_INVALID, MCERR_TARGET_INVALID};
+									message OutgoingMessage = {MC_ERROR, MCERR_TARGET_INVALID};
 									ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
 								}
 							}
 							else {
 								printf("Player is not in FIGHTING state! Cannot flee!\n");
-								message OutgoingMessage = {MC_INVALID, MCERR_NOT_FIGHTING};
+								message OutgoingMessage = {MC_ERROR, MCERR_NOT_FIGHTING};
 								ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
 							}
 						}
@@ -1191,7 +1193,7 @@ int main() {
 						}
 						else {
 							printf("Message not recognized!\n");
-							message OutgoingMessage = {MC_INVALID, 0};
+							message OutgoingMessage = {MC_ERROR, 0};
 							ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
 						}
 						ThreadHandler.MessageQueues[ThreadID].IncomingMessage = 0;

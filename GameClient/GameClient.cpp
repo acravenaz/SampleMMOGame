@@ -301,7 +301,7 @@ void ChooseAction(client_state *ClientState, SOCKET ConnectSocket) {
 		if (CheckChoice(Choice)) {
 			//printf("Choice Valid!\n");
 			ChoiceValid = true;
-			char MsgCmd = MC_INVALID;
+			char MsgCmd = MC_ERROR;
 			char Param = 0;
 			size_t SpacePos = Choice.find_first_of(" ", 0);
 			if (SpacePos != string::npos) {
@@ -503,7 +503,7 @@ int main() {
 					}
 					//ChooseAction(&ClientState, ConnectSocket);
 				}
-				else if (ReceivedMessage->Command == MC_INVALID) {
+				else if (ReceivedMessage->Command == MC_ERROR) {
 					if (ReceivedMessage->Data[0] == MCERR_INVALIDROOM) {
 						printf("Cannot move in that direction! No door exists.\n");
 					}
