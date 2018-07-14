@@ -385,7 +385,7 @@ void ChooseAction(client_state *ClientState, SOCKET ConnectSocket) {
 			message OutMsg = {MsgCmd, Param};
 			//memcpy(OutMsg.Data, &Param, sizeof(int));
 			char *OutBuffer = (char *)&OutMsg;
-			int BytesSent = send(ConnectSocket, OutBuffer, DEFAULT_BUFFER_LENGTH, 0);
+			int BytesSent = send(ConnectSocket, OutBuffer, 2, 0);
 		}
 		else {
 			printf("Invalid Selection! Try again.\n");
@@ -404,7 +404,7 @@ int main() {
 		// NOTE: Send the server a hello upon connecting
 		message OutgoingMessage = {MC_HELLO, 0};
 		char *SendBuffer = (char *)&OutgoingMessage;
-		int BytesSent = send(ConnectSocket, SendBuffer, DEFAULT_BUFFER_LENGTH, 0);
+		int BytesSent = send(ConnectSocket, SendBuffer, 2, 0);
 		if (BytesSent == SOCKET_ERROR) {
 			printf("Send failed: %d\n", WSAGetLastError());
 			closesocket(ConnectSocket);
@@ -430,7 +430,7 @@ int main() {
 					const char *LogonNameC = LogonName.c_str();
 					strncpy_s(LogonMessage.Data, LogonNameC, DEFAULT_NAME_LENGTH);
 					char *LogonBuffer = (char *)&LogonMessage;
-					BytesSent = send(ConnectSocket, LogonBuffer, DEFAULT_BUFFER_LENGTH, 0);
+					BytesSent = send(ConnectSocket, LogonBuffer, 1 + strlen(LogonBuffer), 0);
 				}
 				// NOTE: Server responds with this after client sends MC_LOGON with logon name
 				else if (ReceivedMessage->Command == MC_PLAYERINFO) {
@@ -440,7 +440,7 @@ int main() {
 					printf("Player Info Received. Player's name is %s, standing in room %d.\n", ClientState.Player.Name, ClientState.Player.CurrentRoom);
 					message OutMsg = {MC_STARTPLAYER, 0};
 					char *OutBuffer = (char *)&OutMsg;
-					BytesSent = send(ConnectSocket, OutBuffer, DEFAULT_BUFFER_LENGTH, 0);
+					BytesSent = send(ConnectSocket, OutBuffer, 2, 0);
 				}
 				else if (ReceivedMessage->Command == MC_LOGONFAILED) {
 					printf("Logon failed! Player already logged in.\n");
@@ -491,7 +491,7 @@ int main() {
 						getline(cin, temp);
 						message OutMsg = {MC_LOGOFF, 0};
 						char *OutBuffer = (char *)&OutMsg;
-						BytesSent = send(ConnectSocket, OutBuffer, DEFAULT_BUFFER_LENGTH, 0);
+						BytesSent = send(ConnectSocket, OutBuffer, 2, 0);
 						Running = false;
 					}
 					else {
@@ -499,7 +499,7 @@ int main() {
 						getline(cin, temp);
 						message OutMsg = {MC_STARTPLAYER, 0};
 						char *OutBuffer = (char *)&OutMsg;
-						BytesSent = send(ConnectSocket, OutBuffer, DEFAULT_BUFFER_LENGTH, 0);
+						BytesSent = send(ConnectSocket, OutBuffer, 2, 0);
 					}
 					//ChooseAction(&ClientState, ConnectSocket);
 				}

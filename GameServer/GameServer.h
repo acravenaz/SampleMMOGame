@@ -31,6 +31,7 @@ along with SampleMMOGame. If not, see <https://www.gnu.org/licenses/>.
 #define SERVER_TICK_RATE (float)30.0
 
 struct thread_message_queue {
+	uint32 OutgoingMessageSize;
 	message *IncomingMessage;
 	message *OutgoingMessage;
 };

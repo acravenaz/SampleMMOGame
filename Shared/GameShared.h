@@ -34,7 +34,7 @@ using namespace std;
 #define DEFAULT_PORT "37015"
 #define DEFAULT_BUFFER_LENGTH 4096
 
-#define DEFAULT_NAME_LENGTH (size_t)32
+#define DEFAULT_NAME_LENGTH 32
 #define PLAYER_MAX_INVENTORY 11
 #define ROOM_MAX_ITEMS 11
 #define ROOM_MAX_ENEMIES 11
@@ -60,7 +60,7 @@ typedef uint32_t uint32;
 #define ITEM_SHIELD 4
 
 struct item {
-	char Name[DEFAULT_NAME_LENGTH];
+	char Name[DEFAULT_NAME_LENGTH + 1];
 	int ID;
 	int Type;
 	int Param[ITEM_MAX_PARAMS];
@@ -144,7 +144,7 @@ struct item {
 struct enemy;
 
 struct player {
-	char Name[DEFAULT_NAME_LENGTH];
+	char Name[DEFAULT_NAME_LENGTH + 1];
 	int CurrentRoom;
 	int HPMax;
 	int HP;
@@ -224,7 +224,7 @@ struct player {
 };
 
 struct enemy {
-	char Name[DEFAULT_NAME_LENGTH];
+	char Name[DEFAULT_NAME_LENGTH + 1];
 	uint32 HPMax;
 	int HP;
 	int ATK;

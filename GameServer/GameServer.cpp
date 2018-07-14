@@ -176,7 +176,6 @@ uint32 Game_GetNextPlayerID(game_state *GameState) {
 uint32 Game_LogonPlayer(game_state *GameState, char *LogonName) {
 	uint32 PlayerID = 0;
 	PlayerID = Game_GetNextPlayerID(GameState);
-
 	if (PlayerID) {
 		bool PlayerLoggedOn = false;
 		PlayerLoggedOn = Game_CheckPlayerActive(GameState, LogonName);
@@ -367,6 +366,7 @@ DWORD WINAPI Thread_ClientConnection(void *Data) {
 		if (BytesReceived > 0) {
 			//NOTE: Intercept MC_LOGOFF and set ClientConnected to false, so the thread can properly
 			//		terminate before informing main() that the client disconnected with MC_DISCONNECT
+			printf("Bytes received: %d\n", BytesReceived);
 			message *IncMessage = (message *)ReceiveBuffer;
 			if (IncMessage->Command != MC_NONE) {
 				if (IncMessage->Command != MC_LOGOFF) {
@@ -376,9 +376,9 @@ DWORD WINAPI Thread_ClientConnection(void *Data) {
 						message *Message = MessageQueue->OutgoingMessage;
 						if (Message) {
 							char *OutgoingBuffer = (char *)Message;
-							int BytesSent = send(ThreadData->ClientSocket, OutgoingBuffer, DEFAULT_BUFFER_LENGTH, 0);
+							int BytesSent = send(ThreadData->ClientSocket, OutgoingBuffer, MessageQueue->OutgoingMessageSize + 1, 0);
 							if (BytesSent > 0) {
-								//printf("Sent %d bytes.\n", BytesSent);
+								printf("Sent %d bytes.\n", BytesSent);
 							}
 							else {
 								printf("Send Failed: %d\n", WSAGetLastError());
@@ -540,6 +540,7 @@ int main() {
 							printf("Sending logon request.\n");
 							message OutgoingMessage = {MC_REQLOGON, 0};
 							ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
+							ThreadHandler.MessageQueues[ThreadID].OutgoingMessageSize = 1;
 						}
 						else if (Message->Command == MC_LOGON) {
 							//printf("Received logon name from client.\n");
@@ -552,11 +553,13 @@ int main() {
 								message OutgoingMessage = {MC_PLAYERINFO, 0};
 								memcpy(OutgoingMessage.Data, &GameState.Players[PlayerID], sizeof(player));
 								ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
+								ThreadHandler.MessageQueues[ThreadID].OutgoingMessageSize = sizeof(player);
 							}
 							else {
 								printf("Player logon failed!\n");
 								message OutgoingMessage = {MC_LOGONFAILED, 0};
 								ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
+								ThreadHandler.MessageQueues[ThreadID].OutgoingMessageSize = 1;
 							}
 						}
 						else if (Message->Command == MC_STARTPLAYER) {
@@ -567,6 +570,7 @@ int main() {
 							message OutgoingMessage = {MC_ENTERROOM, 0};
 							memcpy(OutgoingMessage.Data, &CurrentRoom, sizeof(room));
 							ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
+							ThreadHandler.MessageQueues[ThreadID].OutgoingMessageSize = sizeof(room);
 						}
 						else if (Message->Command == MC_MOVETO) {
 							printf("Client requesting to move to another room.\n");
@@ -586,11 +590,13 @@ int main() {
 												message OutgoingMessage = {MC_ENTERROOM, 0};
 												memcpy(OutgoingMessage.Data, NewRoom, sizeof(room));
 												ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
+												ThreadHandler.MessageQueues[ThreadID].OutgoingMessageSize = sizeof(room);
 											}
 											else {
 												printf("Player lacks required key!\n");
 												message OutgoingMessage = {MC_ERROR, MCERR_MOVE_REQUIRES_KEY};
 												ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
+												ThreadHandler.MessageQueues[ThreadID].OutgoingMessageSize = 1;
 											}
 										}
 										else {
@@ -598,24 +604,28 @@ int main() {
 											message OutgoingMessage = {MC_ENTERROOM, 0};
 											memcpy(OutgoingMessage.Data, NewRoom, sizeof(room));
 											ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
+											ThreadHandler.MessageQueues[ThreadID].OutgoingMessageSize = sizeof(room);
 										}
 									}
 									else {
 										printf("ConnectedRoom is invalid!\n");
 										message OutgoingMessage = {MC_ERROR, MCERR_INVALIDROOM};
 										ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
+										ThreadHandler.MessageQueues[ThreadID].OutgoingMessageSize = 1;
 									}
 								}
 								else {
 									printf("Player is not in NEUTRAL state! Cannot move!");
 									message OutgoingMessage = {MC_ERROR, MCERR_NOT_NEUTRAL};
 									ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
+									ThreadHandler.MessageQueues[ThreadID].OutgoingMessageSize = 1;
 								}
 							}
 							else {
 								printf("Move direction is invalid!\n");
 								message OutgoingMessage = {MC_ERROR, MCERR_INVALIDROOM};
 								ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
+								ThreadHandler.MessageQueues[ThreadID].OutgoingMessageSize = 1;
 							}
 						}
 						else if (Message->Command == MC_PICKUP) {
@@ -647,6 +657,7 @@ int main() {
 													printf("Item already exists in player's inventory!\n");
 													message OutgoingMessage = {MC_ERROR, MCERR_ITEM_EXISTS};
 													ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
+													ThreadHandler.MessageQueues[ThreadID].OutgoingMessageSize = 1;
 													ItemAlreadyExists = true;
 													break;
 												}
@@ -663,6 +674,7 @@ int main() {
 														message OutgoingMessage = {MC_UPDATEINV, 0};
 														memcpy(OutgoingMessage.Data, ActivePlayer->Inventory, sizeof(ActivePlayer->Inventory));
 														ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
+														ThreadHandler.MessageQueues[ThreadID].OutgoingMessageSize = sizeof(ActivePlayer->Inventory);
 														ItemAdded = true;
 														break;
 													}
@@ -671,6 +683,7 @@ int main() {
 													printf("Player inventory is full!\n");
 													message OutgoingMessage = {MC_ERROR, MCERR_INVENTORY_FULL};
 													ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
+													ThreadHandler.MessageQueues[ThreadID].OutgoingMessageSize = 1;
 												}
 											} //NOTE: ItemAlreadyExists error is handled above
 										}
@@ -678,24 +691,28 @@ int main() {
 											printf("Player lacks required key!\n");
 											message OutgoingMessage = {MC_ERROR, MCERR_PICKUP_REQUIRES_KEY};
 											ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
+											ThreadHandler.MessageQueues[ThreadID].OutgoingMessageSize = 1;
 										}
 									}
 									else {
 										printf("Item requested doesn't exist in room/has ID of 0!\n");
 										message OutgoingMessage = {MC_ERROR, MCERR_ITEM_INVALID};
-										ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
+										ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage; 
+										ThreadHandler.MessageQueues[ThreadID].OutgoingMessageSize = 1;
 									}
 								}
 								else {
 									printf("Player is not in NEUTRAL state! Cannot pickup!");
 									message OutgoingMessage = {MC_ERROR, MCERR_NOT_NEUTRAL};
 									ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
+									ThreadHandler.MessageQueues[ThreadID].OutgoingMessageSize = 1;
 								}
 							}
 							else {
 								printf("Item requested was out of bounds!\n");
 								message OutgoingMessage = {MC_ERROR, MCERR_OUT_OF_BOUNDS};
 								ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
+								ThreadHandler.MessageQueues[ThreadID].OutgoingMessageSize = 1;
 							}
 						}
 						else if (Message->Command == MC_USEITEM) {
@@ -717,23 +734,27 @@ int main() {
 										message OutgoingMessage = {MC_PLAYERUPDATE, 0};
 										memcpy(OutgoingMessage.Data, ActivePlayer, sizeof(player));
 										ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
+										ThreadHandler.MessageQueues[ThreadID].OutgoingMessageSize = sizeof(player);
 									}
 									else {
 										printf("Item is not a consumable! Cannot use!\n");
 										message OutgoingMessage = {MC_ERROR, MCERR_NOT_CONSUMABLE};
 										ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
+										ThreadHandler.MessageQueues[ThreadID].OutgoingMessageSize = 1;
 									}
 								}
 								else {
 									printf("Player is not in NEUTRAL or FIGHTING state! Cannot use!\n");
 									message OutgoingMessage = {MC_ERROR, MCERR_PLAYER_DEAD};
 									ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
+									ThreadHandler.MessageQueues[ThreadID].OutgoingMessageSize = 1;
 								}
 							}
 							else {
 								printf("Item requested was out of bounds!\n");
 								message OutgoingMessage = {MC_ERROR, MCERR_OUT_OF_BOUNDS};
 								ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
+								ThreadHandler.MessageQueues[ThreadID].OutgoingMessageSize = 1;
 							}
 						}
 						else if (Message->Command == MC_EQUIP) {
@@ -750,6 +771,7 @@ int main() {
 										message OutgoingMessage = {MC_PLAYERUPDATE, 0};
 										memcpy(OutgoingMessage.Data, ActivePlayer, sizeof(player));
 										ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
+										ThreadHandler.MessageQueues[ThreadID].OutgoingMessageSize = sizeof(player);
 									}
 									else if (EquipItem->Type == ITEM_SHIELD) {
 										ActivePlayer->Shield = EquipItemID;
@@ -757,23 +779,27 @@ int main() {
 										message OutgoingMessage = {MC_PLAYERUPDATE, 0};
 										memcpy(OutgoingMessage.Data, ActivePlayer, sizeof(player));
 										ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
+										ThreadHandler.MessageQueues[ThreadID].OutgoingMessageSize = sizeof(player);
 									}
 									else {
 										printf("Item is not a weapon! Cannot equip!\n");
 										message OutgoingMessage = {MC_ERROR, MCERR_NOT_WEAPON};
 										ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
+										ThreadHandler.MessageQueues[ThreadID].OutgoingMessageSize = 1;
 									}
 								}
 								else {
 									printf("Player is not in NEUTRAL or FIGHTING state! Cannot equip!\n");
 									message OutgoingMessage = {MC_ERROR, MCERR_PLAYER_DEAD};
 									ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
+									ThreadHandler.MessageQueues[ThreadID].OutgoingMessageSize = 1;
 								}
 							}
 							else {
 								printf("Requested item was out of bounds!\n");
 								message OutgoingMessage = {MC_ERROR, MCERR_OUT_OF_BOUNDS};
 								ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
+								ThreadHandler.MessageQueues[ThreadID].OutgoingMessageSize = 1;
 							}
 						}
 						else if (Message->Command == MC_FIGHT) {
@@ -794,6 +820,7 @@ int main() {
 										message OutgoingMessage = {MC_ENGAGE, 0};
 										memcpy(OutgoingMessage.Data, Enemy, sizeof(enemy));
 										ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
+										ThreadHandler.MessageQueues[ThreadID].OutgoingMessageSize = sizeof(enemy);
 									}
 									else {
 										char Error = MCERR_TARGET_INVALID;
@@ -808,18 +835,21 @@ int main() {
 										printf("Target is invalid!\n");
 										message OutgoingMessage = {MC_ERROR, Error};
 										ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
+										ThreadHandler.MessageQueues[ThreadID].OutgoingMessageSize = 1;
 									}
 								}
 								else {
 									printf("Player is not in NEUTRAL state! Cannot fight!");
 									message OutgoingMessage = {MC_ERROR, MCERR_NOT_NEUTRAL};
 									ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
+									ThreadHandler.MessageQueues[ThreadID].OutgoingMessageSize = 1;
 								}
 							}
 							else {
 								printf("Requested enemy was out of bounds!\n");
 								message OutgoingMessage = {MC_ERROR, MCERR_OUT_OF_BOUNDS};
 								ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
+								ThreadHandler.MessageQueues[ThreadID].OutgoingMessageSize = 1;
 							}
 						}
 						else if (Message->Command == MC_ATTACK) {
@@ -904,6 +934,7 @@ int main() {
 											message OutgoingMessage = {MC_DISENGAGE, 0};
 											memcpy(OutgoingMessage.Data, &CmbUpdate, sizeof(combat_update));
 											ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
+											ThreadHandler.MessageQueues[ThreadID].OutgoingMessageSize = sizeof(combat_update);
 										}
 										//NOTE: Enemy is still alive. Process enemy turn.
 										else {
@@ -927,6 +958,7 @@ int main() {
 												message OutgoingMessage = {MC_DISENGAGE, 0};
 												memcpy(OutgoingMessage.Data, &CmbUpdate, sizeof(combat_update));
 												ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
+												ThreadHandler.MessageQueues[ThreadID].OutgoingMessageSize = sizeof(combat_update);
 											}
 											else {
 												//NOTE: Both combatants still alive. Send normal combat update.
@@ -940,6 +972,7 @@ int main() {
 												message OutgoingMessage = {MC_CMBUPDATE, 0};
 												memcpy(OutgoingMessage.Data, &CmbUpdate, sizeof(combat_update));
 												ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
+												ThreadHandler.MessageQueues[ThreadID].OutgoingMessageSize = sizeof(combat_update);
 											}
 										}
 									}
@@ -948,6 +981,7 @@ int main() {
 										printf("Player's target is not in fighting state!\n");
 										message OutgoingMessage = {MC_ERROR, MCERR_TARGET_INVALID};
 										ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
+										ThreadHandler.MessageQueues[ThreadID].OutgoingMessageSize = 1;
 									}
 								}
 								else {
@@ -955,12 +989,14 @@ int main() {
 									printf("Player's target is invalid!\n");
 									message OutgoingMessage = {MC_ERROR, MCERR_TARGET_INVALID};
 									ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
+									ThreadHandler.MessageQueues[ThreadID].OutgoingMessageSize = 1;
 								}
 							}
 							else {
 								printf("Player is not in FIGHTING state! Cannot attack!\n");
 								message OutgoingMessage = {MC_ERROR, MCERR_NOT_FIGHTING};
 								ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
+								ThreadHandler.MessageQueues[ThreadID].OutgoingMessageSize = 1;
 							}
 						}
 						else if (Message->Command == MC_FLEE) {
@@ -998,6 +1034,7 @@ int main() {
 											message OutgoingMessage = {MC_DISENGAGE, 0};
 											memcpy(OutgoingMessage.Data, &CmbUpdate, sizeof(combat_update));
 											ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
+											ThreadHandler.MessageQueues[ThreadID].OutgoingMessageSize = sizeof(combat_update);
 										}
 										else {
 											Enemy->State = NEUTRAL;
@@ -1014,24 +1051,28 @@ int main() {
 											message OutgoingMessage = {MC_DISENGAGE, 0};
 											memcpy(OutgoingMessage.Data, &CmbUpdate, sizeof(combat_update));
 											ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
+											ThreadHandler.MessageQueues[ThreadID].OutgoingMessageSize = sizeof(combat_update);
 										}
 									}
 									else {
 										printf("Target is not in FIGHTING state!");
 										message OutgoingMessage = {MC_ERROR, MCERR_TARGET_INVALID};
 										ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
+										ThreadHandler.MessageQueues[ThreadID].OutgoingMessageSize = 1;
 									}
 								}
 								else {
 									printf("Player's target is not valid!\n");
 									message OutgoingMessage = {MC_ERROR, MCERR_TARGET_INVALID};
 									ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
+									ThreadHandler.MessageQueues[ThreadID].OutgoingMessageSize = 1;
 								}
 							}
 							else {
 								printf("Player is not in FIGHTING state! Cannot flee!\n");
 								message OutgoingMessage = {MC_ERROR, MCERR_NOT_FIGHTING};
 								ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
+								ThreadHandler.MessageQueues[ThreadID].OutgoingMessageSize = 1;
 							}
 						}
 						else if (Message->Command == MC_DISCONNECT) {
@@ -1057,6 +1098,7 @@ int main() {
 							printf("Message not recognized!\n");
 							message OutgoingMessage = {MC_ERROR, 0};
 							ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
+							ThreadHandler.MessageQueues[ThreadID].OutgoingMessageSize = 1;
 						}
 						ThreadHandler.MessageQueues[ThreadID].IncomingMessage = 0;
 					}
