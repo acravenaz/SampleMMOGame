@@ -24,6 +24,7 @@ along with SampleMMOGame. If not, see <https://www.gnu.org/licenses/>.
 
 #pragma once
 
+#include <vector>
 #include <string>
 using namespace std;
 
@@ -33,6 +34,7 @@ using namespace std;
 #define DEFAULT_PORT "37015"
 #define DEFAULT_BUFFER_LENGTH 4096
 
+#define DEFAULT_NAME_LENGTH (size_t)32
 #define PLAYER_MAX_INVENTORY 11
 #define ROOM_MAX_ITEMS 11
 #define ROOM_MAX_ENEMIES 11
@@ -58,11 +60,73 @@ typedef uint32_t uint32;
 #define ITEM_SHIELD 4
 
 struct item {
-	string Name;
+	char Name[DEFAULT_NAME_LENGTH];
 	int ID;
 	int Type;
 	int Param[ITEM_MAX_PARAMS];
 	uint32 RequiredKey;
+	void UpdateItem(item *CopyItem) {
+		strncpy_s(Name, CopyItem->Name, DEFAULT_NAME_LENGTH);
+		ID = CopyItem->ID;
+		Type = CopyItem->Type;
+		RequiredKey = CopyItem->RequiredKey;
+		for (int i = 0; i < ITEM_MAX_PARAMS; i++) {
+			Param[i] = CopyItem->Param[i];
+		}
+	}
+	//NOTE: Set an item to the default values of a particular item ID.
+	//		1 = Potion, 2 = Sword, 3 = Door Key, 4 = Chest Key, 5 = Shield
+	void SetItem(int ItemID) {
+		if (ItemID == 1) {
+			ID = 1;
+			strncpy_s(Name, "Health Potion", DEFAULT_NAME_LENGTH);
+			Type = ITEM_CONSUMABLE;
+			Param[0] = 6; // +HP
+			RequiredKey = 0;
+		}
+		else if (ItemID == 2) {
+			ID = 2;
+			strncpy_s(Name, "Sword", DEFAULT_NAME_LENGTH);
+			Type = ITEM_WEAPON;
+			Param[0] = 3; // +ATK
+			Param[1] = 1; // +DEF
+			RequiredKey = 0;
+		}
+		else if (ItemID == 3) {
+			ID = 3;
+			strncpy_s(Name, "Door Key", DEFAULT_NAME_LENGTH);
+			Type = ITEM_KEY;
+			Param[0] = 1; // Opens doors/items which require this param
+			RequiredKey = 0;
+		}
+		else if (ItemID == 4) {
+			ID = 4;
+			strncpy_s(Name, "Chest Key", DEFAULT_NAME_LENGTH);
+			Type = ITEM_KEY;
+			Param[0] = 2;
+			RequiredKey = 0;
+		}
+		else if (ItemID == 5) {
+			ID = 5;
+			strncpy_s(Name, "Shield", DEFAULT_NAME_LENGTH);
+			Type = ITEM_SHIELD;
+			Param[0] = 0;
+			Param[1] = 3;
+			RequiredKey = 0;
+		}
+		else {
+			printf("ItemID specified was invalid!\n");
+		}
+	}
+	void ClearItem() {
+		strncpy_s(Name, "", DEFAULT_NAME_LENGTH);
+		ID = 0;
+		Type = 0;
+		RequiredKey = 0;
+		for (int i = 0; i < ITEM_MAX_PARAMS; i++) {
+			Param[i] = 0;
+		}
+	}
 };
 
 //NOTE: The following are state values for players and enemies. INACTIVE means the entity doesn't exist. Players in GameSate->Players[]
@@ -80,7 +144,7 @@ struct item {
 struct enemy;
 
 struct player {
-	string Name;
+	char Name[DEFAULT_NAME_LENGTH];
 	int CurrentRoom;
 	int HPMax;
 	int HP;
@@ -92,17 +156,119 @@ struct player {
 	uint32 Shield;
 	uint32 State;
 	enemy *Target;
+	void UpdatePlayer(player *CopyPlayer) {
+		strncpy_s(Name, CopyPlayer->Name, DEFAULT_NAME_LENGTH);
+		CurrentRoom = CopyPlayer->CurrentRoom;
+		HPMax = CopyPlayer->HPMax;
+		HP = CopyPlayer->HP;
+		BaseATK = CopyPlayer->BaseATK;
+		BaseDEF = CopyPlayer->BaseDEF;
+		Weapon = CopyPlayer->Weapon;
+		Shield = CopyPlayer->Shield;
+		State = CopyPlayer->State;
+		Target = CopyPlayer->Target;
+		for (int i = 1; i < PLAYER_MAX_INVENTORY; i++) {
+			Inventory[i].UpdateItem(&CopyPlayer->Inventory[i]);
+		}
+	}
+	void SetupPlayer(const char *PlayerName) {
+		strncpy_s(Name, PlayerName, DEFAULT_NAME_LENGTH);
+		CurrentRoom = 1;
+		HPMax = 10;
+		HP = 10;
+		BaseATK = 2;
+		BaseDEF = 1;
+		State = NEUTRAL;
+		Weapon = 0;
+		Shield = 0;
+		for (int i = 0; i < PLAYER_MAX_INVENTORY; i++) {
+			//NOTE: Probably not necessary, since any call to 
+			//		SetupPlayer should be on a player object
+			//		that's already been cleared... but just in case.
+			Inventory[i].ClearItem();
+		}
+	}
+	//NOTE: Same as SetupPlayer(), without changing the character's name.
+	//		This is called on player death.
+	void ResetPlayer() {
+		CurrentRoom = 1;
+		HPMax = 10;
+		HP = 10;
+		BaseATK = 2;
+		BaseDEF = 1;
+		State = NEUTRAL;
+		Weapon = 0;
+		Shield = 0;
+		for (int i = 0; i < PLAYER_MAX_INVENTORY; i++) {
+			//NOTE: Probably not necessary, since any call to 
+			//		SetupPlayer should be on a player object
+			//		that's already been cleared... but just in case.
+			Inventory[i].ClearItem();
+		}
+	}
+	void ClearPlayer() {
+		strncpy_s(Name, "", DEFAULT_NAME_LENGTH);
+		CurrentRoom = 0;
+		HPMax = 0;
+		HP = 0;
+		BaseATK = 0;
+		BaseDEF = 0;
+		Weapon = 0;
+		Shield = 0;
+		State = INACTIVE;
+		Target = 0;
+		for (int i = 0; i < PLAYER_MAX_INVENTORY; i++) {
+			Inventory[i].ClearItem();
+		}
+	}
 };
 
 struct enemy {
-	string Name;
+	char Name[DEFAULT_NAME_LENGTH];
 	uint32 HPMax;
 	int HP;
 	int ATK;
 	int DEF;
 	item DropItem;
 	uint32 State;
-	player *Target;
+	void UpdateEnemy(enemy *CopyEnemy) {
+		strncpy_s(Name, CopyEnemy->Name, DEFAULT_NAME_LENGTH);
+		HPMax = CopyEnemy->HPMax;
+		HP = CopyEnemy->HP;
+		ATK = CopyEnemy->ATK;
+		DEF = CopyEnemy->DEF;
+		State = CopyEnemy->State;
+		DropItem.UpdateItem(&CopyEnemy->DropItem);
+	}
+	void SetupEnemy(uint32 Type) {
+		//Goblin
+		if (Type == 1) {
+			strncpy_s(Name, "Goblin", DEFAULT_NAME_LENGTH);
+			HPMax = 10;
+			HP = 10;
+			ATK = 4;
+			DEF = 1;
+			DropItem.SetItem(4);
+			State = NEUTRAL;
+		}
+		if (Type == 2) {
+			strncpy_s(Name, "Really Big Skeleton", DEFAULT_NAME_LENGTH);
+			HPMax = 18;
+			HP = 18;
+			ATK = 8;
+			DEF = 2;
+			State = NEUTRAL;
+		}
+	}
+	void ClearEnemy() {
+		strncpy_s(Name, "", DEFAULT_NAME_LENGTH);
+		HPMax = 0;
+		HP = 0;
+		ATK = 0;
+		DEF = 0;
+		DropItem.ClearItem();
+		State = INACTIVE;
+	}
 };
 
 struct room {

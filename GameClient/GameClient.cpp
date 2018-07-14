@@ -129,14 +129,14 @@ void ListPlayerStats(player *Player) {
 		ATK += Shield->Param[0];
 		DEF += Shield->Param[1];
 	}
-	printf("%s's Stats: | HP: %d/%d | Weapon: %s | Shield: %s | ATK: %d | DEF: %d\n\n", Player->Name.c_str(), Player->HP, Player->HPMax, WeaponName.c_str(), ShieldName.c_str(), ATK, DEF);
+	printf("%s's Stats: | HP: %d/%d | Weapon: %s | Shield: %s | ATK: %d | DEF: %d\n\n", Player->Name, Player->HP, Player->HPMax, WeaponName.c_str(), ShieldName.c_str(), ATK, DEF);
 }
 
 void ListPlayerItems(player *Player) {
 	printf("Inventory: | ");
 	for (int i = 0; i < CountElements(Player->Inventory); i++) {
 		if (Player->Inventory[i].Type != 0) {
-			printf("Slot %d: %s | ", i, Player->Inventory[i].Name.c_str());
+			printf("Slot %d: %s | ", i, Player->Inventory[i].Name);
 		}
 	}
 	printf("\n\n");
@@ -145,7 +145,7 @@ void ListPlayerItems(player *Player) {
 void ListItems(room *Room) {
 	for (int i = 0; i < CountElements(Room->Items); i++) {
 		if (Room->Items[i].Type != 0) {
-			printf("There is a %s in the room! Say \"pickup %d\" to pick up.\n", Room->Items[i].Name.c_str(), i);
+			printf("There is a %s in the room! Say \"pickup %d\" to pick up.\n", Room->Items[i].Name, i);
 		}
 	}
 }
@@ -153,7 +153,7 @@ void ListItems(room *Room) {
 void ListEnemies(room *Room) {
 	for (int i = 0; i < CountElements(Room->Enemies); i++) {
 		if (Room->Enemies[i].HP != 0) {
-			printf("There is a %s in the room! Say \"fight %d\" to fight.\n", Room->Enemies[i].Name.c_str(), i);
+			printf("There is a %s in the room! Say \"fight %d\" to fight.\n", Room->Enemies[i].Name, i);
 		}
 	}
 }
@@ -198,7 +198,7 @@ void StartBattle(client_state *ClientState) {
 	Player->Target = Enemy;
 	Player->State = FIGHTING;
 	system("cls");
-	printf("Engaged in combat with %s!\n %s's HP: %d\nSay \"attack\" to attack, or \"escape\" to flee!\nCan also use and equip items.\n\n", Enemy->Name.c_str(), Enemy->Name.c_str(), Enemy->HP);
+	printf("Engaged in combat with %s!\n %s's HP: %d\nSay \"attack\" to attack, or \"escape\" to flee!\nCan also use and equip items.\n\n", Enemy->Name, Enemy->Name, Enemy->HP);
 	ListPlayerStats(&ClientState->Player);
 }
 
@@ -206,27 +206,27 @@ void DisplayCombatUpdate (client_state *ClientState) {
 	combat_update CombatData = ClientState->CombatData;
 	enemy *Enemy = &ClientState->CurrentEnemy;
 	if (CombatData.Outcome == COMBATANTS_ALIVE) {
-		printf("You attacked %s, dealing %d damage!\n%s attacks you, dealing %d damage!\n", Enemy->Name.c_str(), CombatData.PlayerDamageDealt, Enemy->Name.c_str(), CombatData.PlayerDamageTaken);
-		printf("%s has %d/%d HP remaining\n", Enemy->Name.c_str(), Enemy->HP, Enemy->HPMax);
+		printf("You attacked %s, dealing %d damage!\n%s attacks you, dealing %d damage!\n", Enemy->Name, CombatData.PlayerDamageDealt, Enemy->Name, CombatData.PlayerDamageTaken);
+		printf("%s has %d/%d HP remaining\n", Enemy->Name, Enemy->HP, Enemy->HPMax);
 		ListPlayerStats(&ClientState->Player);
 	}
 	if (CombatData.Outcome == PLAYER_DEAD) {
-		printf("You attacked %s, dealing %d damage!\n%s attacks you, dealing %d damage!\n", Enemy->Name.c_str(), CombatData.PlayerDamageDealt, Enemy->Name.c_str(), CombatData.PlayerDamageTaken);
+		printf("You attacked %s, dealing %d damage!\n%s attacks you, dealing %d damage!\n", Enemy->Name, CombatData.PlayerDamageDealt, Enemy->Name, CombatData.PlayerDamageTaken);
 		printf("Oh dear, you are dead!\nPress enter to respawn.\n");
 	}
 	if (CombatData.Outcome == ENEMY_DEAD) {
-		printf("You attacked %s, dealing %d damage!\n%s attacks you, dealing %d damage!\n", Enemy->Name.c_str(), CombatData.PlayerDamageDealt, Enemy->Name.c_str(), CombatData.PlayerDamageTaken);
-		printf("%s has been defeated!\n", Enemy->Name.c_str());
+		printf("You attacked %s, dealing %d damage!\n%s attacks you, dealing %d damage!\n", Enemy->Name, CombatData.PlayerDamageDealt, Enemy->Name, CombatData.PlayerDamageTaken);
+		printf("%s has been defeated!\n", Enemy->Name);
 		ListPlayerStats(&ClientState->Player);
 		printf("Press enter to return to room.\n");
 	}
 	if (CombatData.Outcome == PLAYER_FLED) {
-		printf("You escape from combat!\nAs you're fleeing, %s attacks you, dealing %d damage!\n", Enemy->Name.c_str(), CombatData.PlayerDamageTaken);
+		printf("You escape from combat!\nAs you're fleeing, %s attacks you, dealing %d damage!\n", Enemy->Name, CombatData.PlayerDamageTaken);
 		ListPlayerStats(&ClientState->Player);
 		printf("Press enter to continue.\n");
 	}
 	if (CombatData.Outcome == PLAYER_FLEE_DEAD) {
-		printf("You attempt to escape from combat!\nAs you're fleeing, %s attacks you, dealing %d damage and killing you!\n", Enemy->Name.c_str(), CombatData.PlayerDamageTaken);
+		printf("You attempt to escape from combat!\nAs you're fleeing, %s attacks you, dealing %d damage and killing you!\n", Enemy->Name, CombatData.PlayerDamageTaken);
 		printf("Oh dear, you are dead!\nPress enter to respawn.\n");
 	}
 }
@@ -423,12 +423,12 @@ int main() {
 				message *ReceivedMessage = (message *)ReceiveBuffer;
 				// NOTE: MC_REQLOGON should be the first response the client receives upon sending MC_HELLO above.
 				if (ReceivedMessage->Command == MC_REQLOGON) {
-					printf("Server is requesting logon. Enter your logon name: ");
+					printf("Server is requesting logon. Enter your logon name (32 Char Max!): ");
 					string LogonName;
 					getline(cin, LogonName);
 					message LogonMessage = {MC_LOGON, 0};
 					const char *LogonNameC = LogonName.c_str();
-					memcpy(LogonMessage.Data, LogonNameC, strlen(LogonNameC));
+					strncpy_s(LogonMessage.Data, LogonNameC, DEFAULT_NAME_LENGTH);
 					char *LogonBuffer = (char *)&LogonMessage;
 					BytesSent = send(ConnectSocket, LogonBuffer, DEFAULT_BUFFER_LENGTH, 0);
 				}
@@ -436,8 +436,8 @@ int main() {
 				else if (ReceivedMessage->Command == MC_PLAYERINFO) {
 					printf("Receiving player info.\n");
 					player *PlayerInfo = (player *)ReceivedMessage->Data;
-					ClientState.Player = *PlayerInfo;
-					printf("Player Info Received. Player's name is %s, standing in room %d.\n", ClientState.Player.Name.c_str(), ClientState.Player.CurrentRoom);
+					ClientState.Player.UpdatePlayer(PlayerInfo);
+					printf("Player Info Received. Player's name is %s, standing in room %d.\n", ClientState.Player.Name, ClientState.Player.CurrentRoom);
 					message OutMsg = {MC_STARTPLAYER, 0};
 					char *OutBuffer = (char *)&OutMsg;
 					BytesSent = send(ConnectSocket, OutBuffer, DEFAULT_BUFFER_LENGTH, 0);
@@ -461,31 +461,31 @@ int main() {
 				}
 				else if (ReceivedMessage->Command == MC_PLAYERUPDATE) {
 					printf("Received updated player info!\n");
-					memcpy(&ClientState.Player, ReceivedMessage->Data, sizeof(player));
+					ClientState.Player.UpdatePlayer((player *)ReceivedMessage->Data);
 					ListPlayerStats(&ClientState.Player);
 					ChooseAction(&ClientState, ConnectSocket);
 				}
 				else if (ReceivedMessage->Command == MC_ENGAGE) {
 					printf("Engaging in combat...\n");
-					memcpy(&ClientState.CurrentEnemy, ReceivedMessage->Data, sizeof(enemy));
+					ClientState.CurrentEnemy.UpdateEnemy((enemy *)ReceivedMessage->Data);
 					StartBattle(&ClientState);
 					ChooseAction(&ClientState, ConnectSocket);
 				}
 				else if (ReceivedMessage->Command == MC_CMBUPDATE) {
 					printf("Received combat update!\n");
 					memcpy(&ClientState.CombatData, ReceivedMessage->Data, sizeof(combat_update));
-					memcpy(&ClientState.Player, &ClientState.CombatData.PlayerInfo, sizeof(player));
-					memcpy(&ClientState.CurrentEnemy, &ClientState.CombatData.EnemyInfo, sizeof(enemy));
+					ClientState.Player.UpdatePlayer(&ClientState.CombatData.PlayerInfo);
+					ClientState.CurrentEnemy.UpdateEnemy(&ClientState.CombatData.EnemyInfo);
 					DisplayCombatUpdate(&ClientState);
 					ChooseAction(&ClientState, ConnectSocket);
 				}
 				else if (ReceivedMessage->Command == MC_DISENGAGE) {
 					printf("Received combat update!\n");
 					memcpy(&ClientState.CombatData, ReceivedMessage->Data, sizeof(combat_update));
-					memcpy(&ClientState.Player, &ClientState.CombatData.PlayerInfo, sizeof(player));
-					memcpy(&ClientState.CurrentEnemy, &ClientState.CombatData.EnemyInfo, sizeof(enemy));
+					ClientState.Player.UpdatePlayer(&ClientState.CombatData.PlayerInfo);
+					ClientState.CurrentEnemy.UpdateEnemy(&ClientState.CombatData.EnemyInfo);
 					DisplayCombatUpdate(&ClientState);
-					if (ClientState.CombatData.Outcome == ENEMY_DEAD && ClientState.CombatData.EnemyInfo.Name.compare("Big Skeleton") == 0) {
+					if (ClientState.CombatData.Outcome == ENEMY_DEAD && strcmp(ClientState.CombatData.EnemyInfo.Name, "Really Big Skeleton") == 0) {
 						printf("You have defeated the big skeleton and made your escape!\n");
 						string temp;
 						getline(cin, temp);

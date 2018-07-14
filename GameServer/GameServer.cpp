@@ -148,10 +148,10 @@ bool Game_PlayerHasKey(player *Player, uint32 KeyID) {
 	return HasKey;
 }
 
-bool Game_CheckPlayerActive(game_state *GameState, string LogonName) {
+bool Game_CheckPlayerActive(game_state *GameState, char *LogonName) {
 	bool PlayerActive = false;
 	for (uint32 i = 1; i <= SERVER_MAX_PLAYERS; i++) {
-		if (LogonName.compare(GameState->Players[i].Name) == 0) {
+		if (strcmp(LogonName, GameState->Players[i].Name) == 0) {
 			if (GameState->Players[i].State != INACTIVE) {
 				PlayerActive = true;
 				break;
@@ -173,22 +173,7 @@ uint32 Game_GetNextPlayerID(game_state *GameState) {
 	return PlayerID;
 }
 
-//TODO: Does this need to return a pointer to the player object? 
-//		This function already requires the caller to know the PlayerID,
-//		So the parent could just retrieve the player object from GameState
-player *Game_IntitializePlayer(game_state *GameState, uint32 PlayerID, string PlayerName) {
-	player *Player;
-	Player = &GameState->Players[PlayerID];
-	Player->Name = PlayerName;
-	Player->CurrentRoom = 1;
-	Player->HPMax = 10;
-	Player->HP = 10;
-	Player->BaseATK = 2;
-	Player->BaseDEF = 1;
-	return Player;
-}
-
-uint32 Game_LogonPlayer(game_state *GameState, string LogonName) {
+uint32 Game_LogonPlayer(game_state *GameState, char *LogonName) {
 	uint32 PlayerID = 0;
 	PlayerID = Game_GetNextPlayerID(GameState);
 
@@ -202,7 +187,7 @@ uint32 Game_LogonPlayer(game_state *GameState, string LogonName) {
 			int Result = sqlite3_open("GameData.db", &DB);
 			if (Result == SQLITE_OK) {
 				char PlayerInfoBuffer[DEFAULT_BUFFER_LENGTH];
-				_snprintf_s(PlayerInfoBuffer, DEFAULT_BUFFER_LENGTH, "SELECT Name, Room, HP, Weapon, Shield FROM Players WHERE Name='%s';", LogonName.c_str());
+				_snprintf_s(PlayerInfoBuffer, DEFAULT_BUFFER_LENGTH, "SELECT Name, Room, HP, Weapon, Shield FROM Players WHERE Name='%s';", LogonName);
 
 				sqlite3_stmt *PlayerInfoStmt;
 				Result = sqlite3_prepare_v2(DB, PlayerInfoBuffer, -1, &PlayerInfoStmt, 0);
@@ -214,13 +199,15 @@ uint32 Game_LogonPlayer(game_state *GameState, string LogonName) {
 					//		the player object is simply left in its initial state and started as a brand
 					//		new player (which is intended functionality).
 					printf("Attempting to load player info from Player database.\n");
-					player *Player = Game_IntitializePlayer(GameState, PlayerID, LogonName);
+					//player *Player = Game_IntitializePlayer(GameState, PlayerID, LogonName);
+					player *Player = &GameState->Players[PlayerID];
+					Player->SetupPlayer(LogonName);
 					Player->State = NEUTRAL;
 					//TODO: We're not catching any errors here!
 					Result = sqlite3_step(PlayerInfoStmt);
 					if (Result == SQLITE_ROW) {
 						printf("Player found. Loading info from DB.\n");
-						Player->Name = (char *)sqlite3_column_text(PlayerInfoStmt, 0);
+						strncpy_s(Player->Name, (char *)sqlite3_column_text(PlayerInfoStmt, 0), DEFAULT_NAME_LENGTH);
 						Player->CurrentRoom = sqlite3_column_int(PlayerInfoStmt, 1);
 						Player->HP = sqlite3_column_int(PlayerInfoStmt, 2);
 						Player->Weapon = sqlite3_column_int(PlayerInfoStmt, 3);
@@ -230,7 +217,7 @@ uint32 Game_LogonPlayer(game_state *GameState, string LogonName) {
 
 						//NOTE: Begin loading inventory info
 						char InventoryInfoBuffer[DEFAULT_BUFFER_LENGTH];
-						_snprintf_s(InventoryInfoBuffer, DEFAULT_BUFFER_LENGTH, "SELECT Slot1, Slot2, Slot3, Slot4, Slot5, Slot6, Slot7, Slot8, Slot9, Slot10 FROM Inventories WHERE Name='%s';", LogonName.c_str());
+						_snprintf_s(InventoryInfoBuffer, DEFAULT_BUFFER_LENGTH, "SELECT Slot1, Slot2, Slot3, Slot4, Slot5, Slot6, Slot7, Slot8, Slot9, Slot10 FROM Inventories WHERE Name='%s';", LogonName);
 						sqlite3_stmt *InventoryStmt;
 						Result = sqlite3_prepare_v2(DB, InventoryInfoBuffer, -1, &InventoryStmt, 0);
 						if (Result == SQLITE_OK) {
@@ -240,35 +227,8 @@ uint32 Game_LogonPlayer(game_state *GameState, string LogonName) {
 								for (int i = 1; i <= PLAYER_MAX_INVENTORY; i++) {
 									int ItemID = 0;
 									ItemID = sqlite3_column_int(InventoryStmt, i - 1);
-									Player->Inventory[i].ID = ItemID;
-									//TODO: THESE SHOULD NOT BE MAGIC NUMBERS!!!!
-									//		Item information should get pulled from a separate table?
-									if (ItemID == 1) {
-										Player->Inventory[i].Name = "Health Potion";
-										Player->Inventory[i].Type = ITEM_CONSUMABLE;
-										Player->Inventory[i].Param[0] = 6;
-									}
-									else if (ItemID == 2) {
-										Player->Inventory[i].Name = "Sword";
-										Player->Inventory[i].Type = ITEM_WEAPON;
-										Player->Inventory[i].Param[0] = 3;
-										Player->Inventory[i].Param[1] = 1;
-									}
-									else if (ItemID == 3) {
-										Player->Inventory[i].Name = "Door Key";
-										Player->Inventory[i].Type = ITEM_KEY;
-										Player->Inventory[i].Param[0] = 1;
-									}
-									else if (ItemID == 4) {
-										Player->Inventory[i].Name = "Chest Key";
-										Player->Inventory[i].Type = ITEM_KEY;
-										Player->Inventory[i].Param[0] = 2;
-									}
-									else if (ItemID == 5) {
-										Player->Inventory[i].Name = "Shield";
-										Player->Inventory[i].Type = ITEM_SHIELD;
-										Player->Inventory[i].Param[0] = 0;
-										Player->Inventory[i].Param[1] = 3;
+									if (ItemID != 0) {
+										Player->Inventory[i].SetItem(ItemID);
 									}
 								}
 							}
@@ -313,7 +273,7 @@ bool Game_SavePlayerState(game_state *GameState, uint32 PlayerID) {
 	int Result = sqlite3_open("GameData.db", &DB);
 	if (Result == SQLITE_OK) {
 		char PlayerInfoBuffer[DEFAULT_BUFFER_LENGTH];
-		_snprintf_s(PlayerInfoBuffer, DEFAULT_BUFFER_LENGTH, "REPLACE INTO Players (Name, Room, HP, Weapon, Shield) VALUES ('%s', %d, %d, %d, %d);", Player->Name.c_str(), Player->CurrentRoom, Player->HP, Player->Weapon, Player->Shield);
+		_snprintf_s(PlayerInfoBuffer, DEFAULT_BUFFER_LENGTH, "REPLACE INTO Players (Name, Room, HP, Weapon, Shield) VALUES ('%s', %d, %d, %d, %d);", Player->Name, Player->CurrentRoom, Player->HP, Player->Weapon, Player->Shield);
 
 		char *err_msg = 0;
 		Result = sqlite3_exec(DB, PlayerInfoBuffer, 0, 0, &err_msg);
@@ -321,7 +281,7 @@ bool Game_SavePlayerState(game_state *GameState, uint32 PlayerID) {
 			printf("Player Info saved successfully\n");
 
 			char InventoryInfoBuffer[DEFAULT_BUFFER_LENGTH];
-			_snprintf_s(InventoryInfoBuffer, DEFAULT_BUFFER_LENGTH, "REPLACE INTO Inventories (Name, Slot1, Slot2, Slot3, Slot4, Slot5, Slot6, Slot7, Slot8, Slot9, Slot10) VALUES ('%s', %d, %d, %d, %d, %d, %d, %d, %d, %d, %d);", Player->Name.c_str(),
+			_snprintf_s(InventoryInfoBuffer, DEFAULT_BUFFER_LENGTH, "REPLACE INTO Inventories (Name, Slot1, Slot2, Slot3, Slot4, Slot5, Slot6, Slot7, Slot8, Slot9, Slot10) VALUES ('%s', %d, %d, %d, %d, %d, %d, %d, %d, %d, %d);", Player->Name,
 				Player->Inventory[1].ID, Player->Inventory[2].ID, Player->Inventory[3].ID, Player->Inventory[4].ID, Player->Inventory[5].ID,
 				Player->Inventory[6].ID, Player->Inventory[7].ID, Player->Inventory[8].ID, Player->Inventory[9].ID, Player->Inventory[10].ID);
 
@@ -350,32 +310,11 @@ bool Game_SavePlayerState(game_state *GameState, uint32 PlayerID) {
 	return true;
 }
 
-void Game_FreePlayer(game_state *GameState, uint32 PlayerID) {
-	player *Player = &GameState->Players[PlayerID];
-	Player->BaseATK = 0;
-	Player->BaseDEF = 0;
-	Player->CurrentRoom = 0;
-	Player->HP = 0;
-	Player->HPMax = 0;
-	for (int i = 1; i < PLAYER_MAX_INVENTORY; i++) {
-		Player->Inventory[i].ID = 0;
-		Player->Inventory[i].Name = "";
-		Player->Inventory[i].Type = 0;
-		for (int j = 0; j < ITEM_MAX_PARAMS; j++) {
-			Player->Inventory[i].Param[j] = 0;
-		}
-	}
-	Player->Name = "";
-	Player->Shield = 0;
-	Player->State = INACTIVE;
-	Player->Target = 0;
-	Player->Weapon = 0;
-}
-
 bool Game_LogoffPlayer(game_state *GameState, uint32 PlayerID) {
 	bool SaveSuccess = false;
 	SaveSuccess = Game_SavePlayerState(GameState, PlayerID);
-	Game_FreePlayer(GameState, PlayerID);
+	GameState->Players[PlayerID].ClearPlayer();
+	//Game_FreePlayer(GameState, PlayerID);
 	return SaveSuccess;
 }
 
@@ -386,79 +325,31 @@ void Game_InitializeRooms(game_state *GameState) {
 	//TODO: Now that we have a SQL database, could these values be stored in a table and read from there?
 	//		This would significantly increase scalability
 	GameState->Rooms[1].RoomID = 1;
-	GameState->Rooms[1].Items[1].Name = "Health Potion";
-	GameState->Rooms[1].Items[1].ID = 1;
-	GameState->Rooms[1].Items[1].Type = ITEM_CONSUMABLE;
-	GameState->Rooms[1].Items[1].Param[0] = 6;
+	GameState->Rooms[1].Items[1].SetItem(1);
 	GameState->Rooms[1].ConnectingRooms[2] = 2;
 
 	GameState->Rooms[2].RoomID = 2;
 	GameState->Rooms[2].ConnectingRooms[4] = 1;
 	GameState->Rooms[2].ConnectingRooms[1] = 3;
 	GameState->Rooms[2].ConnectingRooms[2] = 5;
-	GameState->Rooms[2].Items[1].Name = "Sword";
-	GameState->Rooms[2].Items[1].ID = 2;
-	GameState->Rooms[2].Items[1].Type = ITEM_WEAPON;
-	GameState->Rooms[2].Items[1].Param[0] = 3;
-	GameState->Rooms[2].Items[1].Param[1] = 1;
+	GameState->Rooms[2].Items[1].SetItem(2);
 
 	GameState->Rooms[3].RoomID = 3;
 	GameState->Rooms[3].ConnectingRooms[1] = 4;
 	GameState->Rooms[3].ConnectingRooms[3] = 2;
-	GameState->Rooms[3].Enemies[1].Name = "Goblin";
-	GameState->Rooms[3].Enemies[1].ATK = 4;
-	GameState->Rooms[3].Enemies[1].DEF = 1;
-	GameState->Rooms[3].Enemies[1].HP = 10;
-	GameState->Rooms[3].Enemies[1].HPMax = 10;
-	GameState->Rooms[3].Enemies[1].State = NEUTRAL;
-	GameState->Rooms[3].Enemies[1].DropItem.ID = 4;
-	GameState->Rooms[3].Enemies[1].DropItem.Name = "Chest Key";
-	GameState->Rooms[3].Enemies[1].DropItem.Type = ITEM_KEY;
-	GameState->Rooms[3].Enemies[1].DropItem.Param[0] = 2;
-	GameState->Rooms[3].Enemies[2].Name = "Goblin";
-	GameState->Rooms[3].Enemies[2].ATK = 4;
-	GameState->Rooms[3].Enemies[2].DEF = 1;
-	GameState->Rooms[3].Enemies[2].HP = 10;
-	GameState->Rooms[3].Enemies[2].HPMax = 10;
-	GameState->Rooms[3].Enemies[2].State = NEUTRAL;
-	GameState->Rooms[3].Enemies[2].DropItem.ID = 4;
-	GameState->Rooms[3].Enemies[2].DropItem.Name = "Chest Key";
-	GameState->Rooms[3].Enemies[2].DropItem.Type = ITEM_KEY;
-	GameState->Rooms[3].Enemies[2].DropItem.Param[0] = 2;
-	GameState->Rooms[3].Enemies[3].Name = "Goblin";
-	GameState->Rooms[3].Enemies[3].ATK = 4;
-	GameState->Rooms[3].Enemies[3].DEF = 1;
-	GameState->Rooms[3].Enemies[3].HP = 10;
-	GameState->Rooms[3].Enemies[3].HPMax = 10;
-	GameState->Rooms[3].Enemies[3].State = NEUTRAL;
-	GameState->Rooms[3].Enemies[3].DropItem.ID = 4;
-	GameState->Rooms[3].Enemies[3].DropItem.Name = "Chest Key";
-	GameState->Rooms[3].Enemies[3].DropItem.Type = ITEM_KEY;
-	GameState->Rooms[3].Enemies[3].DropItem.Param[0] = 2;
+	GameState->Rooms[3].Enemies[1].SetupEnemy(1);
+	GameState->Rooms[3].Enemies[2].SetupEnemy(1);
+	GameState->Rooms[3].Enemies[3].SetupEnemy(1);
 
 	GameState->Rooms[4].RoomID = 4;
 	GameState->Rooms[4].ConnectingRooms[3] = 3;
-	GameState->Rooms[4].Items[1].Name = "Door Key";
-	GameState->Rooms[4].Items[1].ID = 3;
-	GameState->Rooms[4].Items[1].Type = ITEM_KEY;
-	GameState->Rooms[4].Items[1].Param[0] = 1;
-	GameState->Rooms[4].Items[1].RequiredKey = 2;
-	GameState->Rooms[4].Items[2].Name = "Shield";
-	GameState->Rooms[4].Items[2].ID = 5;
-	GameState->Rooms[4].Items[2].Type = ITEM_SHIELD;
-	GameState->Rooms[4].Items[2].Param[0] = 0;
-	GameState->Rooms[4].Items[2].Param[1] = 3;
-	GameState->Rooms[4].Items[2].RequiredKey = 2;
+	GameState->Rooms[4].Items[1].SetItem(3);
+	GameState->Rooms[4].Items[2].SetItem(5);
 
 	GameState->Rooms[5].RoomID = 5;
 	GameState->Rooms[5].ConnectingRooms[4] = 2;
 	GameState->Rooms[5].RequiredKey = 1;
-	GameState->Rooms[5].Enemies[1].Name = "Big Skeleton";
-	GameState->Rooms[5].Enemies[1].ATK = 8;
-	GameState->Rooms[5].Enemies[1].DEF = 2;
-	GameState->Rooms[5].Enemies[1].HP = 18;
-	GameState->Rooms[5].Enemies[1].HPMax = 18;
-	GameState->Rooms[5].Enemies[1].State = NEUTRAL;
+	GameState->Rooms[5].Enemies[1].SetupEnemy(2);
 }
 
 // NOTE: Entry point for each thread created when a new client connects on the listening socket
@@ -652,7 +543,7 @@ int main() {
 						}
 						else if (Message->Command == MC_LOGON) {
 							//printf("Received logon name from client.\n");
-							string LogonName(Message->Data);
+							char *LogonName(Message->Data);
 							uint32 PlayerID = 0;
 							PlayerID = Game_LogonPlayer(&GameState, LogonName);
 							if (PlayerID) {
@@ -768,7 +659,7 @@ int main() {
 														printf("Empty slot found. Adding item...\n");
 														//NOTE: Copy the item from the room's Items[] to the player inventory
 														//		We don't have spawners yet, so the item stays in the room
-														memcpy(&ActivePlayer->Inventory[i], PickupItem, sizeof(item));
+														ActivePlayer->Inventory[i].UpdateItem(PickupItem);
 														message OutgoingMessage = {MC_UPDATEINV, 0};
 														memcpy(OutgoingMessage.Data, ActivePlayer->Inventory, sizeof(ActivePlayer->Inventory));
 														ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
@@ -821,10 +712,7 @@ int main() {
 										ActivePlayer->HP += UseItem->Param[0];
 										if (ActivePlayer->HP > ActivePlayer->HPMax) 
 											ActivePlayer->HP = ActivePlayer->HPMax;
-										UseItem->ID = 0;
-										UseItem->Name = "";
-										UseItem->Param[0] = 0;
-										UseItem->Type = 0;
+										UseItem->ClearItem();
 										printf("Item Consumed. Sending updated player stats to client...\n");
 										message OutgoingMessage = {MC_PLAYERUPDATE, 0};
 										memcpy(OutgoingMessage.Data, ActivePlayer, sizeof(player));
@@ -902,7 +790,7 @@ int main() {
 										ActivePlayer->State = FIGHTING;
 										Enemy->State = FIGHTING;
 										ActivePlayer->Target = Enemy;
-										Enemy->Target = ActivePlayer;
+										//Enemy->Target = ActivePlayer;
 										message OutgoingMessage = {MC_ENGAGE, 0};
 										memcpy(OutgoingMessage.Data, Enemy, sizeof(enemy));
 										ThreadHandler.MessageQueues[ThreadID].OutgoingMessage = &OutgoingMessage;
@@ -971,7 +859,7 @@ int main() {
 											//		For now, enemy will just resurrect with full HP.
 											Enemy->State = NEUTRAL;
 											Enemy->HP = Enemy->HPMax;
-											Enemy->Target = nullptr;
+											//Enemy->Target = nullptr;
 											ActivePlayer->State = NEUTRAL;
 											ActivePlayer->Target = nullptr;
 
@@ -996,7 +884,7 @@ int main() {
 															printf("Empty slot found. Adding item...\n");
 															//NOTE: Copy the item from the room's Items[] to the player inventory
 															//		We don't have spawners yet, so the item stays in the room
-															memcpy(&ActivePlayer->Inventory[i], DropItem, sizeof(item));
+															ActivePlayer->Inventory[i].UpdateItem(DropItem);
 															ItemAdded = true;
 															break;
 														}
@@ -1026,22 +914,9 @@ int main() {
 											ActivePlayer->HP -= EnemyDamage;
 											if (ActivePlayer->HP <= 0) {
 												Enemy->State = NEUTRAL;
-												Enemy->Target = nullptr;
+												//Enemy->Target = nullptr;
 												//NOTE: Player is dead!
-												ActivePlayer->State = NEUTRAL;
-												ActivePlayer->HP = ActivePlayer->HPMax;
-												ActivePlayer->CurrentRoom = 1;
-												ActivePlayer->Target = nullptr;
-												ActivePlayer->Weapon = 0;
-												//NOTE: Player drops all items on death!
-												for (int i = 1; i < PLAYER_MAX_INVENTORY; i++) {
-													ActivePlayer->Inventory[i].ID = 0;
-													ActivePlayer->Inventory[i].Name = "";
-													ActivePlayer->Inventory[i].Type = 0;
-													for (int j = 0; j < ITEM_MAX_PARAMS; j++) {
-														ActivePlayer->Inventory[i].Param[j] = 0;
-													}
-												}
+												ActivePlayer->ResetPlayer();
 												combat_update CmbUpdate = {};
 												CmbUpdate.Outcome = PLAYER_DEAD;
 												CmbUpdate.PlayerDamageDealt = Damage;
@@ -1110,22 +985,9 @@ int main() {
 										ActivePlayer->HP -= EnemyDamage;
 										if (ActivePlayer->HP <= 0) {
 											Enemy->State = NEUTRAL;
-											Enemy->Target = nullptr;
+											// Enemy->Target = nullptr;
 											//NOTE: Player is dead!
-											ActivePlayer->State = NEUTRAL;
-											ActivePlayer->HP = ActivePlayer->HPMax;
-											ActivePlayer->CurrentRoom = 1;
-											ActivePlayer->Target = nullptr;
-											ActivePlayer->Weapon = 0;
-											//NOTE: Player drops all items on death!
-											for (int i = 1; i < PLAYER_MAX_INVENTORY; i++) {
-												ActivePlayer->Inventory[i].ID = 0;
-												ActivePlayer->Inventory[i].Name = "";
-												ActivePlayer->Inventory[i].Type = 0;
-												for (int j = 0; j < ITEM_MAX_PARAMS; j++) {
-													ActivePlayer->Inventory[i].Param[j] = 0;
-												}
-											}
+											ActivePlayer->ResetPlayer();
 											combat_update CmbUpdate = {};
 											CmbUpdate.Outcome = PLAYER_FLEE_DEAD;
 											CmbUpdate.PlayerDamageDealt = 0;
@@ -1139,7 +1001,7 @@ int main() {
 										}
 										else {
 											Enemy->State = NEUTRAL;
-											Enemy->Target = nullptr;
+											//Enemy->Target = nullptr;
 											ActivePlayer->State = NEUTRAL;
 											ActivePlayer->Target = nullptr;
 											//NOTE: Both combatants still alive. Send normal combat update.
@@ -1180,7 +1042,7 @@ int main() {
 								ActivePlayer->State = INACTIVE;
 								if (ActivePlayer->Target) {
 									ActivePlayer->Target->State = NEUTRAL;
-									ActivePlayer->Target->Target = nullptr;
+									//ActivePlayer->Target->Target = nullptr;
 								}
 								ActivePlayer->Target = nullptr;
 								Game_LogoffPlayer(&GameState, PlayerID);
