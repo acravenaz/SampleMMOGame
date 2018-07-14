@@ -70,11 +70,48 @@ SOCKET Win32_WinSockInit() {
 	hints.ai_socktype = SOCK_STREAM;
 	hints.ai_protocol = IPPROTO_TCP;
 	hints.ai_flags = AI_PASSIVE;
-
-	// TODO: This will block/fail if input is malformed. Replace with more robust input method.
 	string ServerIPAddr;
-	printf("Please enter server IP address to connect to:\n");
-	getline(cin, ServerIPAddr);
+	bool FileReadSuccess = false;
+	HANDLE FileHandle = CreateFile("connect.ini", GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
+	if (FileHandle != INVALID_HANDLE_VALUE) {
+		LARGE_INTEGER FileSize;
+		if (GetFileSizeEx(FileHandle, &FileSize)) {
+			uint32 FileSize32 = (uint32)FileSize.QuadPart;
+			void *FileContents = VirtualAlloc(0, FileSize32, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+			if (FileContents) {
+				DWORD BytesRead;
+				if (ReadFile(FileHandle, FileContents, FileSize32, &BytesRead, 0)) {
+					if (FileSize32 == BytesRead) {
+						ServerIPAddr = (char *)FileContents;
+						FileReadSuccess = true;
+					}
+					else {
+						//TODO: Logging
+						VirtualFree(FileContents, 0, MEM_RELEASE);
+					}
+				}
+				else {
+					//TODO: Logging
+				}
+			}
+			else {
+				//TODO: Logging
+			}
+		}
+		else {
+			//TODO: Logging?
+		}
+		CloseHandle(FileHandle);
+	}
+
+	if (FileReadSuccess == false) {
+		// TODO: This will block/fail if input is malformed. Replace with more robust input method.
+		printf("Please enter server IP address to connect to:\n");
+		ServerIPAddr = "";
+		getline(cin, ServerIPAddr);
+	}
+
+	printf("Connecting to: %s\n", ServerIPAddr.c_str());
 
 	PCSTR ServerIPAddrC = ServerIPAddr.c_str();
 	int GetAddrInfoResult = getaddrinfo(ServerIPAddrC, DEFAULT_PORT, &hints, &ClientAddrInfo);
